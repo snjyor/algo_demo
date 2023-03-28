@@ -3,7 +3,7 @@ from llama_index import GPTSimpleVectorIndex, LLMPredictor, PromptHelper
 import llama_index
 from langchain.chat_models import ChatOpenAI
 
-os.environ["OPENAI_API_KEY"] = "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"
+os.environ["OPENAI_API_KEY"] = ""
 
 
 def ai_assistant():

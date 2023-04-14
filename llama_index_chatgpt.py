@@ -11,7 +11,7 @@ import llama_index
 from llama_index.node_parser import SimpleNodeParser
 from langchain.chat_models import ChatOpenAI
 
-os.environ["OPENAI_API_KEY"] = "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"
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
 
 def ai_assistant():

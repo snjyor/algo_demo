@@ -1,4 +1,9 @@
 import os
+import random
+from qdrant_client.http.models import CollectionStatus, UpdateStatus, MatchValue, InitFrom
+from qdrant_client.http.models import Distance, VectorParams, PointStruct, ReplicateShardOperation, \
+    OptimizersConfigDiff, Filter, FieldCondition, PointIdsList, Batch
+
 from qdrant_client import QdrantClient
 from qdrant_client.http.api_client import AsyncApis
 
@@ -7,6 +12,7 @@ class QdrantClientOperation:
     """
     Qdrant客户端, 用于操作Qdrant集群, 以及集群中的集合, 点, 以及搜索, 推荐等操作
     """
+
     def __init__(self):
         self.qdrant_url = os.getenv("QDRANT_URL")
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
@@ -15,41 +21,27 @@ class QdrantClientOperation:
             api_key=self.qdrant_api_key,
         )
 
-    def get_qdrant_client(self):
-        """
-        获取qdrant客户端
-        :return: 客户端
-        """
-        return self.qdrant_client
-    
-    def search_batch(self, collection_name, requests):
-        """
-        在多个集合中搜索节点，返回搜索结果列表。
-        :param collection_name:
-        :param requests:
-        :return: list
-        """
-        return self.qdrant_client.search_batch(collection_name, requests)
-    
-    def search(self, collection_name, query_vector, limit=10):
+    def search(self, collection_name, query_vector, query_filter=None, limit=10, with_payload=True, with_vectors=False, score_threshold=None, offset=0):
         """
         在集合中搜索最接近的向量，考虑过滤条件，返回最相似的搜索结果列表。
         :param collection_name:
         :param query_vector:
+        :param query_filter:
         :param limit:
+        :param with_payload:
+        :param with_vectors:
+        :param score_threshold:
+        :param offset:
         :return:
+        example:
+            query_filter=Filter(
+                                 must=[
+                                        FieldCondition(key="name", match=MatchValue(value="jeffrey"))
+                                    ],
+                                 ),
         """
-        return self.qdrant_client.search(collection_name, query_vector, limit=limit)
-    
-    def recommend_batch(self, collection_name, requests):
-        """
-        在批处理模式下执行多个推荐请求，返回推荐结果列表。
-        :param collection_name:
-        :param requests:
-        :return:
-        """
-        return self.qdrant_client.recommend_batch(collection_name, requests)
-    
+        return self.qdrant_client.search(collection_name, query_vector, query_filter, limit=limit, with_payload=with_payload, with_vectors=with_vectors, score_threshold=score_threshold, offset=offset)
+
     def recommend(self, collection_name, positive, negative=None, limit=10):
         """
         推荐点：基于已存储在Qdrant中的示例搜索相似点。
@@ -63,8 +55,8 @@ class QdrantClientOperation:
         :return: list
         """
         return self.qdrant_client.recommend(collection_name, positive, negative, limit=limit)
-    
-    def scroll(self, collection_name,consistency=None, limit=10):
+
+    def scroll(self, collection_name, consistency=None, limit=10, with_payload=True, with_vectors=True):
         """
         滚动集合中的所有（匹配）点。
         此方法提供了一种方法来迭代所有存储的点，具有一些可选的过滤条件。
@@ -74,20 +66,23 @@ class QdrantClientOperation:
         :param collection_name:
         :param consistency:
         :param limit:
+        :param with_payload:
+        :param with_vectors:
         :return: tuple
         """
-        return self.qdrant_client.scroll(collection_name, consistency, limit=limit)
-    
-    def count(self, collection_name):
+        return self.qdrant_client.scroll(collection_name, consistency, limit=limit, with_payload=with_payload, with_vectors=with_vectors)
+
+    def count(self, collection_name, count_filter=None):
         """
         计算集合中的点数。
         计算与给定过滤器匹配的集合中的点数。
         返回符合过滤器的集合中的点数。
         :param collection_name:
+        :param count_filter:
         :return:
         """
-        return self.qdrant_client.count(collection_name)
-    
+        return self.qdrant_client.count(collection_name, count_filter)
+
     def upsert(self, collection_name, points):
         """
         在集合中更新或插入新点。如果给定 ID 的点已经存在 -将被覆盖。
@@ -96,18 +91,22 @@ class QdrantClientOperation:
         :param points: 
         :return: 
         """
-        return self.qdrant_client.upsert(collection_name, points)
-    
-    def retrieve(self, collection_name, ids):
+        operation_info = self.qdrant_client.upsert(collection_name, points)
+        assert operation_info.status == UpdateStatus.COMPLETED
+        return operation_info
+
+    def retrieve(self, collection_name, ids, with_payload=True, with_vectors=True):
         """
-        从通过ID值检索点。
+        从通过ID值检索点的数据。
         返回点列表。
         :param collection_name: 
-        :param ids: 
-        :return: 
+        :param ids:
+        :param with_payload:
+        :param with_vectors:
+        :return:
         """
-        return self.qdrant_client.retrieve(collection_name, ids)
-    
+        return self.qdrant_client.retrieve(collection_name, ids, with_payload, with_vectors)
+
     def delete(self, collection_name, points_selector):
         """
         从集合中删除选择的点。
@@ -117,77 +116,6 @@ class QdrantClientOperation:
         :return: 
         """
         return self.qdrant_client.delete(collection_name, points_selector)
-    
-    def set_payload(self, collection_name, payload, points):
-        """
-        为点设置有效负载。
-        返回操作结果。
-        :param collection_name: 
-        :param payload: 
-        :param points: 
-        :return: 
-        """
-        return self.qdrant_client.set_payload(collection_name, payload, points)
-    
-    def overwrite_payload(self, collection_name, payload, points):
-        """
-        对指定的点设置有效负载。
-        在应用此操作后，只有指定的有效负载才会出现在点中。
-        即使在有效负载中没有指定密钥，现有的有效负载也将被删除。
-        返回操作结果。
-        为点设置有效负载。
-        :param collection_name: 
-        :param payload: 
-        :param points: 
-        :return: 
-        """
-        return self.qdrant_client.overwrite_payload(collection_name, payload, points)
-
-    def delete_payload(self, collection_name, keys, points):
-        """
-        从点的负载中删除值。
-        返回操作结果。
-        :param collection_name:
-        :param keys:
-        :param points:
-        :return:
-        """
-        return self.qdrant_client.delete_payload(collection_name, keys, points)
-
-    def clear_payload(self, collection_name, points_selector):
-        """
-        清除选中点的有效负载。
-        返回操作结果。
-        :param collection_name:
-        :param points_selector:
-        :return:
-        """
-        return self.qdrant_client.clear_payload(collection_name, points_selector)
-
-    def update_collection_aliases(self, change_alias_operations):
-        """
-        用于执行集合别名更改的操作。
-        别名更改是原子的，这意味着在别名操作之间不能进行集合修改。
-        返回操作结果。
-        :param change_alias_operations:
-        :return:
-        """
-        return self.qdrant_client.update_collection_aliases(change_alias_operations)
-
-    def get_collection_aliases(self, collection_name):
-        """
-        返回集合的别名列表。
-        :param collection_name:
-        :return:
-        """
-        return self.qdrant_client.get_collection_aliases(collection_name)
-
-    def get_aliases(self):
-        """
-        返回所有集合的别名列表。
-        :return:
-        """
-        return self.qdrant_client.get_aliases()
 
     def get_collections(self):
         """
@@ -202,15 +130,19 @@ class QdrantClientOperation:
         :param collection_name:
         :return:
         """
-        return self.qdrant_client.get_collection(collection_name)
+        collection_info = self.qdrant_client.get_collection(collection_name)
+        assert collection_info.status == CollectionStatus.GREEN
+        return collection_info
 
-    def update_collection(self, collection_name):
+    def update_collection(self, collection_name, optimizer_config=None, collection_params=None):
         """
         更新集合的元数据。
         :param collection_name:
+        :param optimizer_config:
+        :param collection_params:
         :return:
         """
-        return self.qdrant_client.update_collection(collection_name)
+        return self.qdrant_client.update_collection(collection_name,optimizer_config,collection_params)
 
     def delete_collection(self, collection_name):
         """
@@ -220,7 +152,8 @@ class QdrantClientOperation:
         """
         return self.qdrant_client.delete_collection(collection_name)
 
-    def create_collection(self,collection_name,vectors_config,on_disk_payload=False,quantization_config=None,init_from=None
+    def create_collection(self, collection_name, vectors_config, on_disk_payload=False, shard_number=1,
+                          quantization_config=None, init_from=None
                           ):
         """
         通过给定的参数创建新集合。
@@ -228,22 +161,40 @@ class QdrantClientOperation:
         :param collection_name:
         :param vectors_config:
         :param on_disk_payload:
+        :param shard_number:
         :param quantization_config:
         :param init_from:
         :return:
+        example:
+            collection_name="test_document_chunks",
+            vectors_config=VectorParams(size=1024, distance=Distance.DOT), # Distance.DOT,Distance.COSINE,Distance.Euclid
+            on_disk_payload=True
+            shard_number=1
         """
+        return self.qdrant_client.create_collection(collection_name, vectors_config, on_disk_payload, shard_number,
+                                                    quantization_config, init_from)
 
-    def recreate_collection(self, collection_name, vectors_config, on_disk_payload=False, quantization_config=None):
+    def recreate_collection(self, collection_name, vectors_config, shard_number=1, on_disk_payload=False, init_from=None, quantization_config=None):
         """
         通过给定的参数重新创建集合。会删除之前存在的集合，并通过给定的参数创建新集合
         返回操作结果。
         :param collection_name:
         :param vectors_config:
+        :param shard_number:
         :param on_disk_payload:
+        :param init_from:
         :param quantization_config:
         :return:
+        example:
+            collection_name="test_document_chunks",
+            vectors_config=VectorParams(size=1024, distance=Distance.DOT),
+            on_disk_payload=True
         """
-        return self.qdrant_client.recreate_collection(collection_name, vectors_config, on_disk_payload, quantization_config)
+        if collection_name not in self.get_collections():
+            assert f"collection: {collection_name} is not exist!"
+        self.delete_collection(collection_name)
+        operation_result = self.create_collection(collection_name,vectors_config,on_disk_payload=on_disk_payload, shard_number=shard_number,quantization_config=quantization_config,init_from=init_from)
+        return operation_result
 
     def upload_records(self, collection_name, records, parallel=1):
         """
@@ -273,16 +224,63 @@ class QdrantClientOperation:
         """
         return self.qdrant_client.upload_collection(collection_name, vectors, payload=payload, parallel=parallel)
 
-    def create_payload_index(self, collection_name, field_name):
+    def set_payload(self, collection_name, payload, points):
+        """
+        为点设置有效负载。
+        返回操作结果。
+        :param collection_name:
+        :param payload:
+        :param points: ids
+        :return:
+        """
+        return self.qdrant_client.set_payload(collection_name, payload, points)
+
+    def overwrite_payload(self, collection_name, payload, points):
+        """
+        对指定的点设置有效负载。
+        在应用此操作后，只有指定的有效负载才会出现在点中。
+        即使在有效负载中没有指定密钥，现有的有效负载也将被删除。
+        返回操作结果。
+        为点设置有效负载。
+        :param collection_name:
+        :param payload:
+        :param points: ids
+        :return:
+        """
+        return self.qdrant_client.overwrite_payload(collection_name, payload, points)
+
+    def delete_payload(self, collection_name, keys, points):
+        """
+        从点的负载中删除值。
+        返回操作结果。
+        :param collection_name:
+        :param keys:
+        :param points: ids
+        :return:
+        """
+        return self.qdrant_client.delete_payload(collection_name, keys, points)
+
+    def clear_payload(self, collection_name, points_selector):
+        """
+        清除选中点的有效负载。
+        返回操作结果。
+        :param collection_name:
+        :param points_selector:
+        :return:
+        """
+        return self.qdrant_client.clear_payload(collection_name, points_selector)
+
+    def create_payload_index(self, collection_name, field_name, field_schema):
         """
         创建一个有效负载字段的索引。
         索引字段允许更快地执行过滤的搜索操作。
         返回操作结果。
         :param collection_name:
         :param field_name:
+        :param field_schema:
         :return:
         """
-        return self.qdrant_client.create_payload_index(collection_name, field_name)
+        return self.qdrant_client.create_payload_index(collection_name, field_name, field_schema)
 
     def delete_payload_index(self, collection_name, field_name):
         """
@@ -357,9 +355,23 @@ class QdrantClientOperation:
 
 
 if __name__ == '__main__':
-    qdrant_client_operation = QdrantClientOperation()
-    qdrant_client = qdrant_client_operation.get_qdrant_client()
-    print(qdrant_client)
+    from qdrant_client.http.models import Distance, VectorParams, PointStruct, ReplicateShardOperation, OptimizersConfigDiff, Filter, FieldCondition, PointIdsList, Batch
+    import numpy as np
+    collection = "news_document_chunks"
+    qdrant_client = QdrantClientOperation()
+    result = qdrant_client.get_collections()
+    print(result)
+    result = qdrant_client.get_collection(collection)
+    print(result)
+
+    query = [0.08, 0.86, 0.77, 0.91, 0.07, 0.89, 0.68, 0.4, 0.03, 0.86]
+    search_result = qdrant_client.search(
+        collection_name=collection,
+        query_vector=("image", query),
+        with_vectors=True,
+        score_threshold=4.2
+    )
+    print(search_result)
 
 
 

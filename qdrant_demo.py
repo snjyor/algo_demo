@@ -3,7 +3,7 @@ import random
 from qdrant_client.http.models import CollectionStatus, UpdateStatus, MatchValue, InitFrom
 from qdrant_client.http.models import Distance, VectorParams, PointStruct, ReplicateShardOperation, \
     OptimizersConfigDiff, Filter, FieldCondition, PointIdsList, Batch
-
+from sentence_transformers import SentenceTransformer, util
 from qdrant_client import QdrantClient
 from qdrant_client.http.api_client import AsyncApis
 
@@ -20,6 +20,7 @@ class QdrantClientOperation:
             url=self.qdrant_url,
             api_key=self.qdrant_api_key,
         )
+        self.model = SentenceTransformer('flax-sentence-embeddings/all_datasets_v4_MiniLM-L6')
 
     def search(self, collection_name, query_vector, query_filter=None, limit=10, with_payload=True, with_vectors=False, score_threshold=None, offset=0):
         """
